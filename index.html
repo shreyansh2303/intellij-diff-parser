@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IntelliJ Diff Parser</title>
+    <style>
+        body { 
+            background-color: #0d1117; 
+            color: #e6edf3; 
+            font-family: Arial, sans-serif; 
+            margin: 40px 0; /* Removed auto margin from body */
+            overflow-x: hidden; /* Prevents horizontal scroll jumping */
+        }
+
+        /* NEW: Flexbox container to handle the perfect centering */
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 0 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center; /* This is the magic property that centers the textarea during resize */
+        }
+        
+        /* Force these elements to take the full container width so they don't shrink */
+        h1, .button-group, label { 
+            width: 100%; 
+        }
+
+        h1 { color: #58a6ff; margin-bottom: 25px; }
+
+        textarea { 
+            width: 100%; 
+            max-width: 90vw; /* NEW: Prevents resizing beyond the screen width */
+            padding: 12px; 
+            box-sizing: border-box; 
+            font-family: 'Courier New', Courier, monospace; 
+            font-size: 16px; 
+            line-height: 1.6;
+            font-weight: bold;
+            background-color: #000;
+            color: #fff;
+            border: 1px solid #30363d; 
+            border-radius: 6px;
+            resize: both;
+            min-height: 100px; 
+        }
+
+        textarea:focus { outline: none; border-color: #58a6ff; }
+        
+        #testInput { height: 150px; }
+        #outputArea { height: 350px; }
+
+        .button-group {
+            display: flex;
+            gap: 12px;
+            margin: 15px 0 25px 0;
+        }
+
+        button { 
+            padding: 10px 20px; 
+            font-size: 14px; 
+            font-weight: bold;
+            cursor: pointer; 
+            border: none;
+            border-radius: 6px;
+            transition: background-color 0.2s;
+        }
+
+        #pasteBtn { background-color: #238636; color: #ffffff; }
+        #pasteBtn:hover { background-color: #2ea043; }
+        #copyBtn { background-color: #1f6feb; color: #ffffff; }
+        #copyBtn:hover { background-color: #388bfd; }
+
+        label {
+            margin-bottom: 8px;
+            font-weight: bold;
+            color: #e6edf3;
+            font-size: 15px;
+        }
+
+        #toast {
+            visibility: hidden;
+            min-width: 250px;
+            background-color: #238636; 
+            color: #fff;
+            text-align: center;
+            border-radius: 6px;
+            padding: 16px;
+            position: fixed;
+            z-index: 1;
+            left: 50%;
+            bottom: 30px;
+            transform: translateX(-50%);
+            font-size: 15px;
+            font-weight: bold;
+            box-shadow: 0px 4px 10px rgba(0,0,0,0.5);
+            opacity: 0;
+            transition: opacity 0.3s, bottom 0.3s;
+        }
+
+        #toast.show {
+            visibility: visible;
+            opacity: 1;
+            bottom: 50px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>IntelliJ Diff Parser</h1>
+        
+        <textarea id="testInput" placeholder='Paste the "Expected" or "Actual" string output from IntelliJ IDE here'></textarea>
+        
+        <div class="button-group">
+            <button id="pasteBtn">📋 Paste from Clipboard</button>
+            <button id="copyBtn">📄 Copy Result</button>
+        </div>
+
+        <label for="outputArea">Parsed Result (Editable):</label>
+        <textarea id="outputArea" placeholder="Parsed output will appear here..."></textarea>
+    </div>
+
+    <div id="toast">✅ Result Updated</div>
+
+    <script>
+        const testInput = document.getElementById('testInput');
+        const outputArea = document.getElementById('outputArea');
+        const pasteBtn = document.getElementById('pasteBtn');
+        const copyBtn = document.getElementById('copyBtn');
+        const toast = document.getElementById('toast');
+        let toastTimeout;
+
+        function showToast(message) {
+            toast.textContent = message;
+            toast.classList.add("show");
+            
+            clearTimeout(toastTimeout);
+            
+            toastTimeout = setTimeout(() => {
+                toast.classList.remove("show");
+            }, 2500);
+        }
+
+        function processText() {
+            const lines = testInput.value.split(/\r?\n/);
+            let combinedResult = '';
+
+            lines.forEach(line => {
+                let processedLine = line.trim();
+                if (processedLine.length === 0) return;
+
+                processedLine = processedLine.replace(/^\(+/, '').trim();
+                processedLine = processedLine.replace(/[,\)]+$/, '').trim();
+
+                if ((processedLine.startsWith("'") && processedLine.endsWith("'")) || 
+                    (processedLine.startsWith('"') && processedLine.endsWith('"'))) {
+                    processedLine = processedLine.slice(1, -1);
+                }
+
+                processedLine = processedLine.replace(/\\(n|t|r|'|"|\\)/g, function(match, char) {
+                    switch (char) {
+                        case 'n': return '\n';   
+                        case 't': return '\t';   
+                        case 'r': return '\r';   
+                        case "'": return "'";    
+                        case '"': return '"';    
+                        case '\\': return '\\';  
+                        default: return match;
+                    }
+                });
+
+                combinedResult += processedLine;
+            });
+
+            outputArea.value = combinedResult;
+            
+            if (testInput.value.trim() !== '') {
+                showToast("✅ Result Updated");
+            }
+        }
+
+        let typingTimer;
+        testInput.addEventListener('input', () => {
+            clearTimeout(typingTimer);
+            typingTimer = setTimeout(() => {
+                processText();
+            }, 500);
+        });
+
+        pasteBtn.addEventListener('click', async () => {
+            try {
+                const text = await navigator.clipboard.readText();
+                testInput.value = text;
+                clearTimeout(typingTimer); 
+                processText(); 
+            } catch (err) {
+                showToast("⚠️ Permission denied: Please use Ctrl+V inside the box.");
+            }
+        });
+
+        copyBtn.addEventListener('click', async () => {
+            try {
+                await navigator.clipboard.writeText(outputArea.value);
+                showToast("📄 Copied to Clipboard!");
+            } catch (err) {
+                showToast("⚠️ Failed to copy. Please copy manually.");
+            }
+        });
+    </script>
+</body>
+</html>
